@@ -83,7 +83,7 @@ jobs:
 
       - name: Upload Sandboxie 32
         uses: actions/upload-artifact@v2
-        with:
+        with:  # A boolean indicating whether the release being created or updated is a prerelease.
           name: Sandboxie_x86
           path: |
             Installer/SbiePlus32/*
@@ -96,3 +96,5 @@ jobs:
           path: |
             Installer/SbiePlus64/*
           retention-days: 60
+      - name: Release Drafter
+        uses: release-drafter/release-drafter@v5.16.2
