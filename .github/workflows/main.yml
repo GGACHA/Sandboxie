@@ -96,5 +96,3 @@ jobs:
           path: |
             Installer/SbiePlus64/*
           retention-days: 60
-      - name: Release Drafter
-        uses: release-drafter/release-drafter@v5.16.2
