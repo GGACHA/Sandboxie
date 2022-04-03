@@ -20,6 +20,7 @@
 // Service Control Manager
 //---------------------------------------------------------------------------
 
+
 //#define ErrorMessageBox(txt)
 //
 //#define HOOK_WIN32(func) {                                                  \

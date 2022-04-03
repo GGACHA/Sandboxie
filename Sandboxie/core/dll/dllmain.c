@@ -86,6 +86,7 @@ BOOLEAN Dll_InitComplete = FALSE;
 BOOLEAN Dll_RestrictedToken = FALSE;
 BOOLEAN Dll_ChromeSandbox = FALSE;
 BOOLEAN Dll_FirstProcessInBox = FALSE;
+BOOLEAN Dll_CompartmentMode = FALSE;
 
 ULONG Dll_ImageType = DLL_IMAGE_UNSPECIFIED;
 
@@ -173,6 +174,12 @@ _FX BOOL WINAPI DllMain(
             File_DoAutoRecover(TRUE);
             Gui_ResetClipCursor();
         }
+
+//#ifdef _WIN64
+//		// cleanup CS
+//		DeleteCriticalSection(&VT_CriticalSection);
+//#endif
+
     }
 
     return TRUE;
@@ -285,6 +292,8 @@ _FX void Dll_InitInjected(void)
     //
 
     Dll_ProcessFlags = SbieApi_QueryProcessInfo(0, 0);
+
+    Dll_CompartmentMode = (Dll_ProcessFlags & SBIE_FLAG_APP_COMPARTMENT) != 0;
 
     Dll_SelectImageType();
 
@@ -423,7 +432,8 @@ _FX void Dll_InitInjected(void)
     //
 
 #ifdef WITH_DEBUG
-    if (ok && (! Debug_Init())) ok = FALSE;
+    if (ok) 
+        ok = Debug_Init();
 #endif WITH_DEBUG
 
     if (! ok) {
@@ -828,7 +838,7 @@ _FX ULONG_PTR Dll_Ordinal1(
 
             WCHAR text[128];
             Sbie_snwprintf(text, 128, L"Cleanly restarting forced process, reason %d", MustRestartProcess);
-            SbieApi_MonitorPut(MONITOR_OTHER, text);
+            SbieApi_MonitorPutMsg(MONITOR_OTHER, text);
 
             extern void Proc_RestartProcessOutOfPcaJob(void);
             Proc_RestartProcessOutOfPcaJob();

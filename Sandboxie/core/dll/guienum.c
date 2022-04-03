@@ -226,7 +226,7 @@ _FX BOOLEAN Gui_InitEnum(void)
     }
 
 	// NoSbieDesk BEGIN
-    if ((Dll_ProcessFlags & SBIE_FLAG_APP_COMPARTMENT) != 0 || SbieApi_QueryConfBool(NULL, L"NoSandboxieDesktop", FALSE))
+    if (Dll_CompartmentMode || SbieApi_QueryConfBool(NULL, L"NoSandboxieDesktop", FALSE))
         return TRUE;
 	// NoSbieDesk END
 
@@ -975,7 +975,7 @@ _FX void Gui_MonitorW(const WCHAR *clsnm, ULONG monflag, HWND hwnd)
         Sbie_snwprintf(text, 130, L"#%d", PtrToUlong(clsnm) & 0xFFFF);
     if ((! hwnd) && (! monflag))
         monflag |= MONITOR_DENY;
-    SbieApi_MonitorPut(MONITOR_WINCLASS | monflag, text);
+    SbieApi_MonitorPut2(MONITOR_WINCLASS | monflag, text, FALSE);
 }
 
 

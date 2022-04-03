@@ -1,5 +1,6 @@
 /*
  * Copyright 2004-2020 Sandboxie Holdings, LLC 
+ * Copyright 2021-2022 David Xanatos, xanasoft.com
  *
  * This program is free software: you can redistribute it and/or modify
  *   it under the terms of the GNU General Public License as published by
@@ -20,6 +21,7 @@
 //---------------------------------------------------------------------------
 
 
+#define NOGDI
 #include "dll.h"
 #include "obj.h"
 #include "core/svc/FileWire.h"
@@ -775,7 +777,7 @@ _FX NTSTATUS Key_FixNameWow64(
 
         // ToDo: ???
         // NoSysCallHooks BEGIN
-        //if((Dll_ProcessFlags & SBIE_FLAG_APP_COMPARTMENT) != 0 || SbieApi_QueryConfBool(NULL, L"NoSysCallHooks", FALSE))
+        //if(Dll_CompartmentMode || SbieApi_QueryConfBool(NULL, L"NoSysCallHooks", FALSE))
         //    return STATUS_SUCCESS;
         // NoSysCallHooks END
 

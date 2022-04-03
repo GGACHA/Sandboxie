@@ -6,8 +6,11 @@
 HEADERS += ./stdafx.h \
     ./SandMan.h \
     ./SbiePlusAPI.h \
+    ./SbieProcess.h \
+    ./BoxJob.h \
     ./Models/SbieModel.h \
     ./Models/TraceModel.h \
+    ./Models/MonitorModel.h \
     ./Views/SbieView.h \
     ./Views/TraceView.h \
     ./Dialogs/MultiErrorDialog.h \
@@ -26,7 +29,10 @@ SOURCES += ./main.cpp \
     ./stdafx.cpp \
     ./SandMan.cpp \
     ./SbiePlusAPI.cpp \
+    ./SbieProcess.cpp \
+    ./BoxJob.cpp \
     ./Models/TraceModel.cpp \
+    ./Models/MonitorModel.cpp \
     ./Models/SbieModel.cpp \
     ./Views/SbieView.cpp \
     ./Views/TraceView.cpp \

@@ -195,15 +195,18 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="BoxJob.cpp" />
     <ClCompile Include="Dialogs\MultiErrorDialog.cpp" />
     <ClCompile Include="Helpers\FindTool.cpp" />
     <ClCompile Include="Helpers\WinAdmin.cpp" />
     <ClCompile Include="Helpers\WindowFromPointEx.cpp" />
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="Models\MonitorModel.cpp" />
     <ClCompile Include="Models\TraceModel.cpp" />
     <ClCompile Include="Models\SbieModel.cpp" />
     <ClCompile Include="SandMan.cpp" />
     <ClCompile Include="SbiePlusAPI.cpp" />
+    <ClCompile Include="SbieProcess.cpp" />
     <ClCompile Include="stdafx.cpp">
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Create</PrecompiledHeader>
       <PrecompiledHeader Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">Create</PrecompiledHeader>
@@ -246,10 +249,13 @@
     <QtMoc Include="Models\SbieModel.h" />
     <QtMoc Include="Models\TraceModel.h" />
     <QtMoc Include="Dialogs\MultiErrorDialog.h" />
+    <QtMoc Include="BoxJob.h" />
     <ClInclude Include="Helpers\FindTool.h" />
     <ClInclude Include="Helpers\WinAdmin.h" />
+    <QtMoc Include="Models\MonitorModel.h" />
     <ClInclude Include="resource.h" />
     <QtMoc Include="SbiePlusAPI.h" />
+    <QtMoc Include="SbieProcess.h" />
     <ClInclude Include="stdafx.h" />
   </ItemGroup>
   <ItemGroup>

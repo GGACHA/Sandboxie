@@ -244,6 +244,14 @@ static NTSTATUS Ipc_NtOpenSection(
 
 //---------------------------------------------------------------------------
 
+static NTSTATUS Ipc_NtCreateSymbolicLinkObject (
+    PHANDLE pHandle,
+    ACCESS_MASK DesiredAccess,
+    POBJECT_ATTRIBUTES ObjectAttributes,
+    PUNICODE_STRING DestinationName);
+
+
+//---------------------------------------------------------------------------
 
 static P_NtCreatePort               __sys_NtCreatePort              = NULL;
 static P_NtConnectPort              __sys_NtConnectPort             = NULL;
@@ -269,6 +277,9 @@ static P_NtCreateSemaphore          __sys_NtCreateSemaphore         = NULL;
 static P_NtOpenSemaphore            __sys_NtOpenSemaphore           = NULL;
 static P_NtCreateSection            __sys_NtCreateSection           = NULL;
 static P_NtOpenSection              __sys_NtOpenSection             = NULL;
+
+static P_NtCreateSymbolicLinkObject __sys_NtCreateSymbolicLinkObject= NULL;
+
 static P_NtImpersonateAnonymousToken
                                     __sys_NtImpersonateAnonymousToken
                                                                     = NULL;
@@ -344,7 +355,7 @@ _FX BOOLEAN Ipc_Init(void)
     SBIEDLL_HOOK_IF(NtAlpcQueryInformationMessage);
 
     // OriginalToken BEGIN
-    if ((Dll_ProcessFlags & SBIE_FLAG_APP_COMPARTMENT) == 0 && !SbieApi_QueryConfBool(NULL, L"OriginalToken", FALSE))
+    if (!Dll_CompartmentMode && !SbieApi_QueryConfBool(NULL, L"OriginalToken", FALSE))
     // OriginalToken END
     {
         SBIEDLL_HOOK(Ipc_, NtImpersonateClientOfPort);
@@ -371,8 +382,10 @@ _FX BOOLEAN Ipc_Init(void)
     SBIEDLL_HOOK(Ipc_,NtCreateSection);
     SBIEDLL_HOOK(Ipc_,NtOpenSection);
 
+    SBIEDLL_HOOK(Ipc_,NtCreateSymbolicLinkObject);
+
     // OriginalToken BEGIN
-    if ((Dll_ProcessFlags & SBIE_FLAG_APP_COMPARTMENT) == 0 && !SbieApi_QueryConfBool(NULL, L"OriginalToken", FALSE))
+    if (!Dll_CompartmentMode && !SbieApi_QueryConfBool(NULL, L"OriginalToken", FALSE))
     // OriginalToken END
     {
         SBIEDLL_HOOK(Ipc_, NtImpersonateAnonymousToken);
@@ -734,7 +747,7 @@ _FX BOOLEAN Ipc_GetName_AdjustSplWow64Path(WCHAR *TruePath, BOOLEAN adj)
     //
 
     // NoSbieDesk BEGIN
-    if ((Dll_ProcessFlags & SBIE_FLAG_APP_COMPARTMENT) != 0 || SbieApi_QueryConfBool(NULL, L"NoSandboxieDesktop", FALSE))
+    if (Dll_CompartmentMode || SbieApi_QueryConfBool(NULL, L"NoSandboxieDesktop", FALSE))
         return TRUE;
 	// NoSbieDesk END
 
@@ -3257,7 +3270,7 @@ _FX NTSTATUS Ipc_ConnectProxyPort(
     // check if we are in app mode in which case proxying is not needed, but we must indicate to open true path
     //
 
-    if ((Dll_ProcessFlags & SBIE_FLAG_APP_COMPARTMENT) != 0)
+    if (Dll_CompartmentMode) // NoServiceAssist
         return STATUS_BAD_INITIAL_STACK;
 
     status = STATUS_SUCCESS;
@@ -3744,4 +3757,24 @@ _FX ULONG Ipc_NtQueryObjectName(UNICODE_STRING *ObjectName, ULONG MaxLen)
     }
 
     return 0;
+}
+
+
+//---------------------------------------------------------------------------
+// Ipc_NtCreateSymbolicLinkObject
+//---------------------------------------------------------------------------
+
+
+_FX NTSTATUS Ipc_NtCreateSymbolicLinkObject(
+    PHANDLE pHandle, ACCESS_MASK DesiredAccess,
+    POBJECT_ATTRIBUTES ObjectAttributes, PUNICODE_STRING DestinationName)
+{
+    WCHAR strW[8192];
+	Sbie_snwprintf(strW, 8192, L"NtCreateSymbolicLinkObject, %s", DestinationName);
+	SbieApi_MonitorPutMsg(MONITOR_OTHER | MONITOR_TRACE, strW);
+
+    SbieApi_Log(2205, L"NtCreateSymbolicLinkObject");
+
+    return STATUS_PRIVILEGE_NOT_HELD;
+    //return __sys_NtCreateSymbolicLinkObject(pHandle, DesiredAccess, ObjectAttributes, DestinationName);
 }

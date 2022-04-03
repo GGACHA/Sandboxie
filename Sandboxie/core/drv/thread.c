@@ -25,6 +25,7 @@
 #include "process.h"
 #include "syscall.h"
 #include "token.h"
+#include "obj.h"
 #include "session.h"
 #include "api.h"
 
@@ -147,6 +148,7 @@ _FX BOOLEAN Thread_Init(void)
                     "ImpersonateAnonymousToken", Thread_ImpersonateAnonymousToken))
         return FALSE;
 
+
     //
     // set object open handlers
     //
@@ -167,6 +169,7 @@ _FX BOOLEAN Thread_Init(void)
                     "AlpcOpenSenderThread",     Thread_CheckThreadObject))
             return FALSE;
     }
+
 
     //
     // set API handlers
@@ -376,7 +379,11 @@ _FX PROCESS *Thread_FindAndInitProcess(
     PROCESS *proc2 = Process_Find(PsGetProcessId(ProcessObject2), out_irql);
     if (proc2) {
 
-        if (! Process_IsSameBox(proc1, proc2, 0) && ! Process_IsStarter(proc1, proc2))
+        if (! Process_IsSameBox(proc1, proc2, 0) 
+#ifdef DRV_BREAKOUT
+            && ! Process_IsStarter(proc1, proc2)
+#endif
+        )
             proc2 = NULL;
 
         else if (! proc2->threads_lock) {
@@ -943,10 +950,9 @@ _FX NTSTATUS Thread_CheckProcessObject(
     PROCESS *proc, void *Object, UNICODE_STRING *Name,
     ACCESS_MASK GrantedAccess)
 {
+    if (Obj_CallbackInstalled) return STATUS_SUCCESS; // ObCallbacks takes care of that already
     PEPROCESS ProcessObject = (PEPROCESS)Object;
-    ACCESS_MASK WriteAccess = (GrantedAccess & PROCESS_DENIED_ACCESS_MASK);
-    return Thread_CheckObject_Common(
-                proc, ProcessObject, GrantedAccess, WriteAccess, L'P');
+    return Thread_CheckObject_Common(proc, ProcessObject, GrantedAccess, TRUE, TRUE);
 }
 
 
@@ -959,10 +965,9 @@ _FX NTSTATUS Thread_CheckThreadObject(
     PROCESS *proc, void *Object, UNICODE_STRING *Name,
     ACCESS_MASK GrantedAccess)
 {
+    if (Obj_CallbackInstalled) return STATUS_SUCCESS; // ObCallbacks takes care of that already
     PEPROCESS ProcessObject = PsGetThreadProcess(Object);
-    ACCESS_MASK WriteAccess = (GrantedAccess & THREAD_DENIED_ACCESS_MASK);
-    return Thread_CheckObject_Common(
-                proc, ProcessObject, GrantedAccess, WriteAccess, L'T');
+    return Thread_CheckObject_Common(proc, ProcessObject, GrantedAccess, FALSE, TRUE);
 }
 
 
@@ -973,11 +978,40 @@ _FX NTSTATUS Thread_CheckThreadObject(
 
 _FX NTSTATUS Thread_CheckObject_Common(
     PROCESS *proc, PEPROCESS ProcessObject,
-    ACCESS_MASK GrantedAccess, ACCESS_MASK WriteAccess, WCHAR Letter1)
+    ACCESS_MASK GrantedAccess, BOOLEAN EntireProcess,
+    BOOLEAN ExplicitAccess)
 {
     ULONG_PTR pid;
     const WCHAR *pSetting;
     NTSTATUS status;
+    WCHAR Letter1;
+    ACCESS_MASK WriteAccess;
+    ACCESS_MASK ReadAccess;
+
+    BOOLEAN ShouldMonitorAccess = FALSE;
+    void *nbuf;
+    ULONG nlen;
+    WCHAR *nptr;
+
+    if (EntireProcess) {
+        Letter1 = L'P';
+        WriteAccess = (GrantedAccess & PROCESS_DENIED_ACCESS_MASK);
+        ReadAccess = (GrantedAccess & PROCESS_VM_READ); 
+
+        //
+        // PROCESS_QUERY_INFORMATION allows to steal an attached debug object
+        // using object filtering mitigates this issue 
+        // but when its not active we should block that access
+        //
+
+        if(!Obj_CallbackInstalled)
+            ReadAccess |= (GrantedAccess & PROCESS_QUERY_INFORMATION); 
+    }
+    else {
+        Letter1 = L'T';
+        WriteAccess = (GrantedAccess & THREAD_DENIED_ACCESS_MASK);
+        ReadAccess = 0;
+    }
 
     //
     // if an error occured and can't find pid, then don't allow
@@ -988,24 +1022,14 @@ _FX NTSTATUS Thread_CheckObject_Common(
     if (! pid)
         return STATUS_ACCESS_DENIED;
 
-    //
-    // for read-only access to the target process, we don't care
-    // if/which boxes are involved
-    //
-
-    if (pid && (WriteAccess == 0)) {
-        status = STATUS_SUCCESS;
-        goto trace;
-    }
+    status = STATUS_SUCCESS;
 
     //
-    // otherwise this is write access, confirm if same box
+    // allow access if it's within the same box
     //
 
-    if (Process_IsSameBox(proc, NULL, pid)) {
-        status = STATUS_SUCCESS;
-        goto trace;
-    }
+    if (Process_IsSameBox(proc, NULL, pid))
+        goto finish;
 
     //
     // also permit if process is exiting, because it is possible that
@@ -1014,52 +1038,59 @@ _FX NTSTATUS Thread_CheckObject_Common(
     // (e.g. VS2012 MSBuild.exe does this with the csc.exe compiler)
     //
 
-    if (PsGetProcessExitProcessCalled(ProcessObject)) {
-        status = STATUS_SUCCESS;
-        goto trace;
-    }
+    if (ExplicitAccess && PsGetProcessExitProcessCalled(ProcessObject))
+        goto finish;
+
 
     //
-    // write access outside box, check if we have the following setting
+    // access outside box, check if we have the following setting
     // OpenIpcPath=$:ProcessName.exe
     //
 
-    status = Process_CheckProcessName(
-                    proc, &proc->open_ipc_paths, pid, &pSetting);
+    if (Process_CheckProcessName(proc, &proc->closed_ipc_paths, pid, &pSetting)) {
 
+        status = STATUS_ACCESS_DENIED;
+
+    } else if (WriteAccess != 0 || ReadAccess != 0) {
+
+        if (!Process_CheckProcessName(proc, &proc->open_ipc_paths, pid, &pSetting)) {
+
+            if (WriteAccess != 0) {
+
+                status = STATUS_ACCESS_DENIED;
+
+            } else if (!Process_CheckProcessName(proc, &proc->read_ipc_paths, pid, &pSetting)) {
+
+                status = STATUS_ACCESS_DENIED;
+            }
+        }
+    }
+    
     //
     // log the cross-sandbox access attempt, based on the status code
     //
 
-    if (Session_MonitorCount && !proc->disable_monitor) {
+    ShouldMonitorAccess = TRUE;
 
-        void *nbuf;
-        ULONG nlen;
-        WCHAR *nptr;
+finish:
 
-        Process_GetProcessName(proc->pool, pid, &nbuf, &nlen, &nptr);
-        if (nbuf) {
-
-            ULONG mon_type = MONITOR_IPC;
-            if (NT_SUCCESS(status))
-                mon_type |= MONITOR_OPEN;
-            else
-                mon_type |= MONITOR_DENY;
-
-            --nptr; *nptr = L':';
-            --nptr; *nptr = L'$';
-
-            Session_MonitorPut(mon_type, nptr, proc->pid);
-
-            Mem_Free(nbuf, nlen);
-        }
+    Process_GetProcessName(proc->pool, pid, &nbuf, &nlen, &nptr);
+    if (nbuf) {
+        --nptr; *nptr = L':';
+        --nptr; *nptr = L'$';
     }
+
+    ULONG mon_type = MONITOR_IPC;
+    if(!NT_SUCCESS(status))
+        mon_type |= MONITOR_DENY;
+    else if (WriteAccess || ReadAccess)
+        mon_type |= MONITOR_OPEN;
+    if (!ShouldMonitorAccess)
+        mon_type |= MONITOR_TRACE;
 
     //
     // trace
     //
-
-trace:
 
     if (proc->ipc_trace & (TRACE_ALLOW | TRACE_DENY)) {
 
@@ -1076,9 +1107,23 @@ trace:
         if (Letter2) {
             RtlStringCbPrintfW(str, sizeof(str), L"(%c%c) %08X %06d",
                                 Letter1, Letter2, GrantedAccess, (int)pid);
-            Log_Debug_Msg(MONITOR_IPC | MONITOR_TRACE, str, Driver_Empty);
+            Log_Debug_Msg(mon_type, str, nptr ? nptr : Driver_Empty);
         }
     }
+    else if (ShouldMonitorAccess && Session_MonitorCount && !proc->disable_monitor && nbuf != NULL) {
+
+        Session_MonitorPut(mon_type, nptr, proc->pid);
+    }
+
+    if (ExplicitAccess && (status != STATUS_SUCCESS) && (status != STATUS_BAD_INITIAL_PC)) {
+
+        WCHAR msg[256];
+        RtlStringCbPrintfW(msg, sizeof(msg), L"%s (%08X) access=%08X initialized=%d", EntireProcess ? L"OpenProcess" : L"OpenThread", status, GrantedAccess, proc->initialized);
+		Log_Msg_Process(MSG_2111, msg, nptr != NULL ? nptr : L"Unnamed process", -1, proc->pid);
+    }
+
+    if (nbuf) 
+        Mem_Free(nbuf, nlen);
 
     return status;
 }

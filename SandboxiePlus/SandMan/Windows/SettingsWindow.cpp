@@ -110,6 +110,10 @@ CSettingsWindow::CSettingsWindow(QWidget *parent)
 	ui.cmbSysTray->addItem(tr("Show Plus icon"));
 	ui.cmbSysTray->addItem(tr("Show Classic icon"));
 
+	ui.cmbTrayBoxes->addItem(tr("All Boxes"));
+	ui.cmbTrayBoxes->addItem(tr("Active + Pinned"));
+	ui.cmbTrayBoxes->addItem(tr("Pinned Only"));
+
 	ui.cmbOnClose->addItem(tr("Close to Tray"), "ToTray");
 	ui.cmbOnClose->addItem(tr("Prompt before Close"), "Prompt");
 	ui.cmbOnClose->addItem(tr("Close"), "Close");
@@ -120,12 +124,13 @@ CSettingsWindow::CSettingsWindow(QWidget *parent)
 	LoadSettings();
 	
 	connect(ui.cmbSysTray, SIGNAL(currentIndexChanged(int)), this, SLOT(OnChange()));
+	connect(ui.cmbTrayBoxes, SIGNAL(currentIndexChanged(int)), this, SLOT(OnChange()));
 	connect(ui.cmbOnClose, SIGNAL(currentIndexChanged(int)), this, SLOT(OnChange()));
 
 	m_FeaturesChanged = false;
 	connect(ui.chkWFP, SIGNAL(stateChanged(int)), this, SLOT(OnFeaturesChanged()));
 	connect(ui.chkObjCb, SIGNAL(stateChanged(int)), this, SLOT(OnFeaturesChanged()));
-	connect(ui.chkWin32k, SIGNAL(stateChanged(int)), this, SLOT(OnFeaturesChanged()));
+	//connect(ui.chkWin32k, SIGNAL(stateChanged(int)), this, SLOT(OnFeaturesChanged()));
 	
 	m_WarnProgsChanged = false;
 
@@ -148,7 +153,7 @@ CSettingsWindow::CSettingsWindow(QWidget *parent)
 	connect(ui.btnDelCompat, SIGNAL(clicked(bool)), this, SLOT(OnDelCompat()));
 	m_CompatLoaded = 0;
 	m_CompatChanged = false;
-	ui.chkNoCompat->setChecked(theConf->GetBool("Options/AutoRunSoftCompat", true));
+	ui.chkNoCompat->setChecked(!theConf->GetBool("Options/AutoRunSoftCompat", true));
 
 	connect(ui.treeCompat, SIGNAL(itemClicked(QTreeWidgetItem*, int)), this, SLOT(OnTemplateClicked(QTreeWidgetItem*, int)));
 
@@ -203,11 +208,18 @@ void CSettingsWindow::closeEvent(QCloseEvent *e)
 Qt::CheckState CSettingsWindow__IsContextMenu()
 {
 	QString cmd = CSbieUtils::GetContextMenuStartCmd();
-	if (cmd.contains("sandman.exe", Qt::CaseInsensitive)) 
+	if (cmd.contains("SandMan.exe", Qt::CaseInsensitive)) 
 		return Qt::Checked; // set up and sandman
 	if (!cmd.isEmpty()) // ... probably sbiectrl.exe
 		return Qt::PartiallyChecked; 
 	return Qt::Unchecked; // not set up
+}
+
+void CSettingsWindow__AddContextMenu()
+{
+	CSbieUtils::AddContextMenu(QApplication::applicationDirPath().replace("/", "\\") + "\\SandMan.exe",
+		CSettingsWindow::tr("Run &Sandboxed"), //CSettingsWindow::tr("Explore &Sandboxed"),
+			QApplication::applicationDirPath().replace("/", "\\") + "\\Start.exe");
 }
 
 void CSettingsWindow::LoadSettings()
@@ -230,6 +242,7 @@ void CSettingsWindow::LoadSettings()
 	}
 
 	ui.chkShellMenu->setCheckState(CSettingsWindow__IsContextMenu());
+	ui.chkShellMenu2->setChecked(CSbieUtils::HasContextMenu2());
 	ui.chkAlwaysDefault->setChecked(theConf->GetBool("Options/RunInDefaultBox", false));
 
 	ui.chkDarkTheme->setCheckState(CSettingsWindow__Int2Chk(theConf->GetInt("Options/UseDarkTheme", 2)));
@@ -240,6 +253,7 @@ void CSettingsWindow::LoadSettings()
 
 	ui.chkShowRecovery->setChecked(theConf->GetBool("Options/ShowRecovery", false));
 	ui.chkNotifyRecovery->setChecked(!theConf->GetBool("Options/InstantRecovery", true));
+	ui.chkAsyncBoxOps->setChecked(theConf->GetBool("Options/UseAsyncBoxOps", false));
 
 	ui.chkPanic->setChecked(theConf->GetBool("Options/EnablePanicKey", false));
 	ui.keyPanic->setKeySequence(QKeySequence(theConf->GetString("Options/PanicKeySequence", "Shift+Pause")));
@@ -248,6 +262,8 @@ void CSettingsWindow::LoadSettings()
 
 	
 	ui.cmbSysTray->setCurrentIndex(theConf->GetInt("Options/SysTrayIcon", 1));
+	ui.cmbTrayBoxes->setCurrentIndex(theConf->GetInt("Options/SysTrayFilter", 0));
+	ui.chkBoxOpsNotify->setChecked(theConf->GetBool("Options/AutoBoxOpsNotify", false));
 	ui.cmbOnClose->setCurrentIndex(ui.cmbOnClose->findData(theConf->GetString("Options/OnClose", "ToTray")));
 
 
@@ -263,7 +279,7 @@ void CSettingsWindow::LoadSettings()
 		ui.ipcRoot->setText(theAPI->GetGlobalSettings()->GetText("IpcRootPath", IpcRootPath_Default));
 
 		ui.chkWFP->setChecked(theAPI->GetGlobalSettings()->GetBool("NetworkEnableWFP", false));
-		ui.chkObjCb->setChecked(theAPI->GetGlobalSettings()->GetBool("EnableObjectFiltering", false));
+		ui.chkObjCb->setChecked(theAPI->GetGlobalSettings()->GetBool("EnableObjectFiltering", true));
 		ui.chkWin32k->setChecked(theAPI->GetGlobalSettings()->GetBool("EnableWin32kHooks", true));
 
 		ui.chkAdminOnly->setChecked(theAPI->GetGlobalSettings()->GetBool("EditAdminOnly", false));
@@ -369,12 +385,21 @@ void CSettingsWindow::SaveSettings()
 
 	if (ui.chkShellMenu->checkState() != CSettingsWindow__IsContextMenu())
 	{
-		if (ui.chkShellMenu->isChecked()) {
-			CSbieUtils::AddContextMenu(QApplication::applicationDirPath().replace("/", "\\") + "\\SandMan.exe",
-				QApplication::applicationDirPath().replace("/", "\\") + "\\Start.exe");
-		} else
+		if (ui.chkShellMenu->isChecked())
+			CSettingsWindow__AddContextMenu();
+		else
 			CSbieUtils::RemoveContextMenu();
 	}
+
+	if (ui.chkShellMenu2->isChecked() != CSbieUtils::HasContextMenu2()) {
+		if (ui.chkShellMenu2->isChecked()) {
+			CSbieUtils::AddContextMenu2(QApplication::applicationDirPath().replace("/", "\\") + "\\Start.exe",
+				tr("Run &Un-Sandboxed"),
+				QApplication::applicationDirPath().replace("/", "\\") + "\\Start.exe");
+		} else
+			CSbieUtils::RemoveContextMenu2();
+	}
+
 	theConf->SetValue("Options/RunInDefaultBox", ui.chkAlwaysDefault->isChecked());
 
 	theConf->SetValue("Options/ShowNotifications", ui.chkNotifications->isChecked());
@@ -383,6 +408,7 @@ void CSettingsWindow::SaveSettings()
 
 	theConf->SetValue("Options/ShowRecovery", ui.chkShowRecovery->isChecked());
 	theConf->SetValue("Options/InstantRecovery", !ui.chkNotifyRecovery->isChecked());
+	theConf->SetValue("Options/UseAsyncBoxOps", ui.chkAsyncBoxOps->isChecked());
 
 	theConf->SetValue("Options/EnablePanicKey", ui.chkPanic->isChecked());
 	theConf->SetValue("Options/PanicKeySequence", ui.keyPanic->keySequence().toString());
@@ -390,6 +416,8 @@ void CSettingsWindow::SaveSettings()
 	theConf->SetValue("Options/WatchIni", ui.chkWatchConfig->isChecked());
 
 	theConf->SetValue("Options/SysTrayIcon", ui.cmbSysTray->currentIndex());
+	theConf->SetValue("Options/SysTrayFilter", ui.cmbTrayBoxes->currentIndex());
+	theConf->SetValue("Options/AutoBoxOpsNotify", ui.chkBoxOpsNotify->isChecked());
 	theConf->SetValue("Options/OnClose", ui.cmbOnClose->currentData());
 
 
@@ -502,14 +530,31 @@ void CSettingsWindow::SaveSettings()
 
 			QString CertPath = theAPI->GetSbiePath() + "\\Certificate.dat";
 			if (!Certificate.isEmpty()) {
-				QString TempPath = QDir::tempPath() + "/Sbie+Certificate.dat";
-				QFile CertFile(TempPath);
-				if (CertFile.open(QFile::WriteOnly)) {
-					CertFile.write(Certificate);
-					CertFile.close();
-				}
 
-				WindowsMoveFile(TempPath.replace("/", "\\"), CertPath.replace("/", "\\"));
+				auto Args = GetArguments(Certificate, L'\n', L':');
+
+				bool bLooksOk = true;
+				if (Args.value("NAME").isEmpty()) // mandatory
+					bLooksOk = false;
+				//if (Args.value("UPDATEKEY").isEmpty())
+				//	bLooksOk = false;
+				if (Args.value("SIGNATURE").isEmpty()) // absolutely mandatory
+					bLooksOk = false;
+
+				if (bLooksOk) {
+					QString TempPath = QDir::tempPath() + "/Sbie+Certificate.dat";
+					QFile CertFile(TempPath);
+					if (CertFile.open(QFile::WriteOnly)) {
+						CertFile.write(Certificate);
+						CertFile.close();
+					}
+
+					WindowsMoveFile(TempPath.replace("/", "\\"), CertPath.replace("/", "\\"));
+				}
+				else {
+					Certificate.clear();
+					QMessageBox::critical(this, "Sandboxie-Plus", tr("This does not look like a certificate, please enter the entire certificate not just a portion of it."));
+				}
 			}
 			else if(!g_Certificate.isEmpty()){
 				WindowsMoveFile(CertPath.replace("/", "\\"), "");
@@ -811,7 +856,7 @@ void CSettingsWindow::CertChanged()
 void CSettingsWindow::LoadCertificate()
 {
 	QString CertPath;
-	if (theAPI->IsConnected())
+	if (theAPI && theAPI->IsConnected())
 		CertPath = theAPI->GetSbiePath() + "\\Certificate.dat";
 	else
 		CertPath = QCoreApplication::applicationDirPath() + "\\Certificate.dat";
